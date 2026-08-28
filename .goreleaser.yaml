@@ -1,3 +1,5 @@
+version: 2
+
 project_name: pure-live
 env:
   - GO111MODULE=on
@@ -34,15 +36,6 @@ checksum:
   name_template: '{{ .ProjectName }}_checksums.txt'
 archives:
   - name_template: '{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
-    replacements:
-      darwin: macOS
-      linux: Linux
-      windows: Windows
-      386: 32bit
-      amd64: 64bit
-    format_overrides:
-      - goos: windows
-        format: zip
     files:
       - README.md
       - config/server.yaml.example
