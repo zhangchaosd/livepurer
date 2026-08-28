@@ -1,0 +1,12 @@
+dist
+.idea
+log
+data
+config/server.yaml
+config/account.yaml
+*.exe
+bin
+static
+*.log
+pure-live
+.go-cache
