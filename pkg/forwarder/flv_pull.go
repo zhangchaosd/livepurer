@@ -20,6 +20,8 @@ type FlvPuller struct {
 	client    *http.Client
 	resp      *http.Response
 	streamURL string
+	ua        string
+	referer   string
 }
 
 const (
@@ -37,7 +39,10 @@ func NewFlvPuller(streamURL string, ua, referer string) *FlvPuller {
 		referer = "https://www.douyu.com/"
 	}
 	transport := &http.Transport{
-		Dial: (&net.Dialer{Timeout: 10 * time.Second}).Dial,
+		DialContext:           (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 15 * time.Second,
+		IdleConnTimeout:       90 * time.Second,
 		TLSClientConfig: &tls.Config{
 			// 兼容只支持 RSA 密钥交换的 CDN(斗鱼等)
 			MinVersion: tls.VersionTLS12,
@@ -53,6 +58,8 @@ func NewFlvPuller(streamURL string, ua, referer string) *FlvPuller {
 			// 不设置整体超时, 直播流是长连接
 		},
 		streamURL: streamURL,
+		ua:        ua,
+		referer:   referer,
 	}
 }
 
@@ -63,9 +70,9 @@ func (p *FlvPuller) Pull(fn func(tag httpflv.Tag)) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("User-Agent", p.ua)
 	req.Header.Set("Accept", "*/*")
-	req.Header.Set("Referer", "https://www.douyu.com/")
+	req.Header.Set("Referer", p.referer)
 	req.Header.Set("Connection", "close")
 
 	resp, err := p.client.Do(req)

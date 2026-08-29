@@ -4,57 +4,79 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/iyear/pure-live-core/pkg/forwarder"
+	"github.com/iyear/pure-live-core/pkg/request"
 	"github.com/iyear/pure-live-core/service/svc_live"
 	"go.uber.org/zap"
 	"net/http"
 )
 
 func Play(c *gin.Context) {
-	conn, bio, err := c.Writer.Hijack()
-	if err != nil {
-		zap.S().Warnw("failed to hijack conn", "error", err)
-		return
-	}
-
-	if bio.Reader.Buffered() != 0 || bio.Writer.Buffered() != 0 {
-		zap.S().Warnw("failed to get buffer", "error", err)
-		return
-	}
-
-	rawUrl := fmt.Sprintf("http://%s%s", c.Request.Host, c.Request.RequestURI)
-
 	// 方式一(推荐): 传入 plat + room, 服务端动态获取最新流地址并转发,
 	// 解决原始流地址签名过期问题, 可作为 IPTV/APTV 等播放器的稳定源:
 	//   GET /api/v1/live/play?plat=douyu&room=6556593
 	plat := c.Query("plat")
 	room := c.Query("room")
+	var pullURL string
+	var refresh forwarder.PullURLRefresher
+	var in forwarder.In
 	if plat != "" && room != "" {
 		url, err := svc_live.GetPlayURL(plat, room)
 		if err != nil {
 			zap.S().Warnw("failed to get play url", "error", err, "plat", plat, "room", room)
+			c.String(http.StatusBadGateway, "failed to resolve stream")
 			return
 		}
-		in := forwarder.GetIn(url.Type)
+		in = forwarder.GetIn(url.Type)
 		if in == nil {
-			c.Status(http.StatusForbidden)
+			c.String(http.StatusBadGateway, "unsupported stream type")
 			return
 		}
-		if err = forwarder.OutLoop(conn, url.Origin, rawUrl, in); err != nil {
-			zap.S().Warnw("play loop failed", "error", err)
+		pullURL = url.Origin
+		refresh = func() (string, error) {
+			latest, err := svc_live.GetPlayURL(plat, room)
+			if err != nil {
+				return "", err
+			}
+			if latest.Type != url.Type {
+				return "", fmt.Errorf("stream type changed from %s to %s", url.Type, latest.Type)
+			}
+			return latest.Origin, nil
+		}
+	} else {
+		// 方式二(旧): 直接传入已解析好的流地址与类型。
+		// 仅允许公网 HTTP(S)/RTMP(S) 地址，避免该兼容接口被用作 SSRF。
+		streamType := c.Query("type")
+		in = forwarder.GetIn(streamType)
+		if in == nil {
+			c.String(http.StatusBadRequest, "unsupported stream type")
 			return
 		}
-		return
+		allowedSchemes := []string{"http", "https"}
+		if streamType == "rtmp" {
+			allowedSchemes = []string{"rtmp", "rtmps"}
+		}
+		streamURL, err := request.ValidatePublicURL(c.Query("url"), allowedSchemes...)
+		if err != nil {
+			c.String(http.StatusBadRequest, "invalid stream URL: %v", err)
+			return
+		}
+		pullURL = streamURL.String()
 	}
 
-	// 方式二(旧): 直接传入已解析好的流地址与类型
-	//   GET /api/v1/live/play?type=flv&url=<urlencoded>
-	in := forwarder.GetIn(c.Query("type"))
-	if in == nil {
-		c.Status(http.StatusForbidden)
+	conn, bio, err := c.Writer.Hijack()
+	if err != nil {
+		zap.S().Warnw("failed to hijack conn", "error", err)
 		return
 	}
-
-	if err = forwarder.OutLoop(conn, c.Query("url"), rawUrl, in); err != nil {
+	if bio.Reader.Buffered() != 0 || bio.Writer.Buffered() != 0 {
+		zap.S().Warn("cannot start stream with buffered connection data")
+		_ = conn.Close()
 		return
+	}
+	defer conn.Close()
+
+	rawURL := fmt.Sprintf("http://localhost%s", c.Request.URL.RequestURI())
+	if err = forwarder.OutLoop(conn, pullURL, rawURL, in, refresh); err != nil {
+		zap.S().Warnw("play loop failed", "error", err)
 	}
 }

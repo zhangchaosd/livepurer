@@ -1,6 +1,7 @@
 package request
 
 import (
+	"context"
 	"github.com/guonaihong/gout"
 	"github.com/guonaihong/gout/dataflow"
 	"github.com/iyear/pure-live-core/pkg/util"
@@ -27,10 +28,13 @@ type socks5Config struct {
 // initDefaultClient 构建默认 HTTP client(复用 Transport 连接池)
 func initDefaultClient() {
 	transport := &http.Transport{
-		Dial:                net.Dial,
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 16,
-		IdleConnTimeout:     90 * time.Second,
+		DialContext:           (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 15 * time.Second,
+		ExpectContinueTimeout: time.Second,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   16,
+		IdleConnTimeout:       90 * time.Second,
 	}
 	client = &http.Client{Transport: transport}
 }
@@ -43,6 +47,9 @@ func init() {
 func SetSocks5(host string, port int, user, password string) {
 	mu.Lock()
 	defer mu.Unlock()
+	if client != nil {
+		client.CloseIdleConnections()
+	}
 	socks5 = socks5Config{host: host, port: port, user: user, password: password}
 	enabled = host != "" && port != 0
 
@@ -50,11 +57,17 @@ func SetSocks5(host string, port int, user, password string) {
 		initDefaultClient()
 		return
 	}
+	dialer := util.MustGetSocks5(host, port, user, password)
 	transport := &http.Transport{
-		Dial:                util.MustGetSocks5(host, port, user, password).Dial,
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 16,
-		IdleConnTimeout:     90 * time.Second,
+		DialContext: func(_ context.Context, network, address string) (net.Conn, error) {
+			return dialer.Dial(network, address)
+		},
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 15 * time.Second,
+		ExpectContinueTimeout: time.Second,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   16,
+		IdleConnTimeout:       90 * time.Second,
 	}
 	client = &http.Client{Transport: transport}
 }

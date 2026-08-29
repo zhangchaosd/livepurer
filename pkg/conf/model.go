@@ -1,24 +1,24 @@
 package conf
 
-type account struct {
-	BiliBili bilibili `mapstructure:"bilibili"`
-	Huya     huya     `mapstructure:"huya"`
-	Douyu    douyu    `mapstructure:"douyu"`
+type AccountConfig struct {
+	BiliBili BiliBiliConfig `mapstructure:"bilibili" json:"bilibili" yaml:"bilibili"`
+	Huya     HuyaConfig     `mapstructure:"huya" json:"huya" yaml:"huya"`
+	Douyu    DouyuConfig    `mapstructure:"douyu" json:"douyu" yaml:"douyu"`
 }
 
-type huya struct {
-	Enable  bool   `mapstructure:"enable"`
-	Cookies string `mapstructure:"cookies"`
+type HuyaConfig struct {
+	Enable  bool   `mapstructure:"enable" json:"enable" yaml:"enable"`
+	Cookies string `mapstructure:"cookies" json:"cookies,omitempty" yaml:"cookies"`
 }
 
-type douyu struct {
-	Enable bool `mapstructure:"enable"`
+type DouyuConfig struct {
+	Enable bool `mapstructure:"enable" json:"enable" yaml:"enable"`
 }
 
-type bilibili struct {
-	Enable          bool   `mapstructure:"enable"`
-	DedeUserID      string `mapstructure:"DedeUserID"`      // DedeUserID
-	DedeUserIDCkMd5 string `mapstructure:"DedeUserIDCkMd5"` // DedeUserID__ckMd5
-	SESSDATA        string `mapstructure:"SESSDATA"`        // SESSDATA
-	BiliJCT         string `mapstructure:"BiliJCT"`         // bili_jct
+type BiliBiliConfig struct {
+	Enable          bool   `mapstructure:"enable" json:"enable" yaml:"enable"`
+	DedeUserID      string `mapstructure:"DedeUserID" json:"DedeUserID,omitempty" yaml:"DedeUserID"`                // DedeUserID
+	DedeUserIDCkMd5 string `mapstructure:"DedeUserIDCkMd5" json:"DedeUserIDCkMd5,omitempty" yaml:"DedeUserIDCkMd5"` // DedeUserID__ckMd5
+	SESSDATA        string `mapstructure:"SESSDATA" json:"SESSDATA,omitempty" yaml:"SESSDATA"`                      // SESSDATA
+	BiliJCT         string `mapstructure:"BiliJCT" json:"BiliJCT,omitempty" yaml:"BiliJCT"`                         // bili_jct
 }

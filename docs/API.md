@@ -54,7 +54,7 @@
 
 > Any /api/v1/proxy
 
-你需要在 `Header` 的 `PL-URL` 属性设置你需要访问的实际 `url` ，注意: 需要显式设置 `scheme` `host` `query`.
+你需要在 `Header` 的 `PL-URL` 属性设置你需要访问的实际 `url` ，注意: 需要显式设置 `scheme` `host` `query`。为避免请求内部服务，仅允许解析为公网地址的 `http` / `https` URL，且不会跟随重定向。
 
 `Request Method` `Body` 与 其他 `Header` 都是你实际需要请求的参数。
 
@@ -240,7 +240,7 @@ type 直播流编码格式
 
 | 参数名 |                    内容                     |                             示例                             |
 | :----: | :-----------------------------------------: | :----------------------------------------------------------: |
-|  url   |          平台直播流地址(`url`编码)          | https://d1--cn-gotcha03.bilivideo.com/live-bvc/723585/live_4578433_9339544.flv?cdn=cn-gotcha03&expires=16386... |
+|  url   |          公网平台直播流地址(`url`编码)          | https://d1--cn-gotcha03.bilivideo.com/live-bvc/723585/live_4578433_9339544.flv?cdn=cn-gotcha03&expires=16386... |
 |  type  | 编码格式(目前只支持`flv` ,`m3u8`等待支持)， |                             flv                              |
 
 请求示例：`/api/v1/live/play?type=flv&url=https://d1--cn-gotcha03.bilivideo.com/live-bvc/723585/live_4578433_9339544.flv?cdn=cn-gotcha03&expires=16386...`
@@ -826,6 +826,18 @@ color 弹幕十进制颜色
   }
 }
 ```
+
+## 管理配置
+
+配置接口为 Web 管理界面提供服务，保存采用原子文件替换。服务与账号配置保存后需要重启；频道配置保存后会立即影响 M3U 输出。账号接口中的已有敏感值会以 `********` 返回，提交空值或该掩码会保留原值。
+
+| 方法 | 路径 | 说明 |
+| :--: | :-- | :-- |
+| GET / PUT | `/api/v1/settings/server` | 读取或保存端口、数据目录、Debug、SOCKS5 |
+| GET / PUT | `/api/v1/settings/account` | 读取或保存 Bilibili、虎牙、斗鱼账号配置 |
+| GET / PUT | `/api/v1/settings/channels` | 读取或保存 IPTV 频道数组 |
+
+> 当前服务没有访问控制。请只在可信本机或局域网中运行，勿将管理端口直接暴露到公网。
 
 ### GetOSAll 获取全部信息
 

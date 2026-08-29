@@ -1,8 +1,10 @@
 package ps
 
 import (
+	"errors"
 	"fmt"
 	"github.com/iyear/pure-live-core/pkg/util"
+	"os"
 	"testing"
 	"time"
 )
@@ -43,6 +45,9 @@ func TestGetSysCPU(t *testing.T) {
 func TestGetOsInfo(t *testing.T) {
 	info, err := GetOsInfo()
 	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			t.Skipf("system information is unavailable in this environment: %v", err)
+		}
 		t.Error(err)
 		t.FailNow()
 	}

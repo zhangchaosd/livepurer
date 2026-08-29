@@ -6,19 +6,14 @@ import (
 	"path"
 )
 
-const (
-	// StaticPath is the path to the static files
-	staticPath = "static"
-)
-
 // Static returns a middleware handler that serves static files in the given directory.
-func Static() gin.HandlerFunc {
-	return static.Serve("/", static.LocalFile(staticPath, true))
+func Static(dir string) gin.HandlerFunc {
+	return static.Serve("/", static.LocalFile(dir, true))
 }
 
 // NoRoute SPA router
-func NoRoute() gin.HandlerFunc {
+func NoRoute(dir string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.File(path.Join(staticPath, "index.html"))
+		c.File(path.Join(dir, "index.html"))
 	}
 }

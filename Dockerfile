@@ -1,3 +1,11 @@
+FROM node:24-alpine AS frontend
+
+WORKDIR /app/web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
 FROM golang:1.25-alpine as builder
 
 WORKDIR /app
@@ -12,6 +20,7 @@ COPY go.sum go.sum
 RUN go mod download
 
 COPY . .
+COPY --from=frontend /app/app/server/internal/frontend/assets ./app/server/internal/frontend/assets
 RUN go build -trimpath -ldflags '-w -s' -o pure-live .
 
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories && \

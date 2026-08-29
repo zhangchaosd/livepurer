@@ -66,5 +66,8 @@ func (s *Rtmp) Pull(pullURL string, fn func(tag httpflv.Tag)) error {
 
 // Shutdown shutdown rtmp session
 func (s *Rtmp) Shutdown() error {
+	if s.session == nil {
+		return nil
+	}
 	return s.session.Dispose()
 }

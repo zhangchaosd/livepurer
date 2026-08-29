@@ -1,7 +1,7 @@
 package huya
 
 import (
-	"context"
+	"crypto/md5"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -14,15 +14,16 @@ import (
 	"github.com/iyear/pure-live-core/pkg/client/internal/huya/internal/tars/heartbeat"
 	"github.com/iyear/pure-live-core/pkg/client/internal/huya/internal/tars/online"
 	"github.com/iyear/pure-live-core/pkg/client/internal/huya/internal/tars/push_msg"
-	"github.com/iyear/pure-live-core/pkg/client/internal/huya/internal/tars/send_msg_req"
 	"github.com/iyear/pure-live-core/pkg/client/internal/huya/internal/tars/ws_cmd"
 	"github.com/iyear/pure-live-core/pkg/client/internal/huya/internal/tars/ws_user_info"
 	"github.com/iyear/pure-live-core/pkg/client/internal/huya/internal/tars/ws_verify_cookie_req"
 	"github.com/iyear/pure-live-core/pkg/conf"
 	"github.com/iyear/pure-live-core/pkg/util"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Huya struct {
@@ -71,10 +72,10 @@ func (h *Huya) GetPlayURL(room string, qn int) (*model.PlayURL, error) {
 	if err != nil {
 		return nil, err
 	}
-	query := u.Query()
-	// 设置最高清晰度
-	query.Set("ratio", "0")
-	u.RawQuery = query.Encode()
+	configurePlayURL(u)
+	if err = refreshAntiCode(u, time.Now()); err != nil {
+		return nil, err
+	}
 
 	return &model.PlayURL{
 		Qn:     qn,
@@ -83,6 +84,48 @@ func (h *Huya) GetPlayURL(room string, qn int) (*model.PlayURL, error) {
 		CORS:   false,
 		Type:   conf.StreamFlv,
 	}, err
+}
+
+func configurePlayURL(u *url.URL) {
+	query := u.Query()
+	// 设置最高清晰度
+	query.Set("ratio", "0")
+	// 虎牙会在未指定编码时优先返回 HEVC(H.265) 流。浏览器中的
+	// flv.js 与许多 IPTV 客户端不支持 HEVC FLV，显式请求 H.264，
+	// 以保证网页播放和 M3U 播放地址的兼容性。
+	query.Set("codec", "264")
+	u.RawQuery = query.Encode()
+}
+
+// refreshAntiCode 为每次取流生成新的虎牙防盗链签名。虎牙的 FLV CDN 通常只
+// 返回数秒的片段；重复使用同一个 seqid 会重复返回旧片段，导致播放器看似断流。
+func refreshAntiCode(u *url.URL, now time.Time) error {
+	query := u.Query()
+	fm := query.Get("fm")
+	wsTime := query.Get("wsTime")
+	if fm == "" || wsTime == "" {
+		return fmt.Errorf("invalid Huya anti-code")
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(fm)
+	if err != nil {
+		return fmt.Errorf("decode Huya anti-code: %w", err)
+	}
+	prefix := strings.SplitN(string(decoded), "_", 2)[0]
+	streamName := strings.TrimSuffix(path.Base(u.Path), path.Ext(u.Path))
+	if prefix == "" || streamName == "" {
+		return fmt.Errorf("invalid Huya stream URL")
+	}
+	seqID := strconv.FormatInt(now.UnixNano()/100, 10)
+	signature := strings.Join([]string{prefix, "0", streamName, seqID, wsTime}, "_")
+	secret := fmt.Sprintf("%x", md5.Sum([]byte(signature)))
+
+	query.Set("wsSecret", secret)
+	query.Set("u", "0")
+	query.Set("seqid", seqID)
+	query.Del("fm")
+	u.RawQuery = query.Encode()
+	return nil
 }
 
 // GetRoomInfo .
@@ -216,83 +259,11 @@ func (h *Huya) handleMsgPushReq(b []byte) ([]model.Msg, bool, error) {
 
 // SendDanmaku .
 func (h *Huya) SendDanmaku(room string, content string, tp int, color int64) error {
-	// TODO 测试无法发送，还未知原因
-	return errors.New("todo")
+	_ = room
+	_ = content
+	_ = tp
 	_ = color
-	if h.Cookies == "" {
-		return errors.New("cookies not exist")
-	}
-
-	ctx, stop := context.WithCancel(context.Background())
-	defer stop()
-	lbuf, err := login(h.UID, h.Cookies)
-	if err != nil {
-		return err
-	}
-
-	conn, _, err := websocket.DefaultDialer.DialContext(ctx, h.Host(room), nil)
-	if err != nil {
-		return err
-	}
-
-	tp, enter, err := h.Enter(room)
-	if err != nil {
-		return err
-	}
-	if err = conn.WriteMessage(tp, enter[0]); err != nil {
-		return err
-	}
-	// login msg
-	if err = conn.WriteMessage(websocket.BinaryMessage, lbuf); err != nil {
-		return err
-	}
-	info, err := getRoomInfo(room)
-	if err != nil {
-		return err
-	}
-
-	lYyid := info.Get("roomInfo.tLiveInfo.lYyid").Int()
-	lChannelId := info.Get("roomInfo.tLiveInfo.tLiveStreamInfo.vStreamInfo.value.0.lChannelId").Int()
-	lSubChannelId := info.Get("roomInfo.tLiveInfo.tLiveStreamInfo.vStreamInfo.value.0.lSubChannelId").Int()
-	// fmt.Println(lYyid,lChannelId,lSubChannelId)
-	fmt.Println(h.UID)
-	req := send_msg_req.SendMessageReq{
-		TUserId: send_msg_req.UserId{
-			LUid:    h.UID,
-			SGuid:   "",
-			SToken:  "",
-			SHuYaUA: "webh5&1.0.0&websocket",
-			SCookie: h.Cookies,
-		},
-		LTid:      lChannelId,
-		LSid:      lSubChannelId,
-		SContent:  content,
-		IShowMode: 0,
-		TFormat: send_msg_req.ContentFormat{
-			IFontColor:  -1,
-			IFontSize:   4,
-			IPopupStyle: 0,
-		},
-		TBulletFormat: send_msg_req.BulletFormat{
-			IFontColor:      -1,
-			IFontSize:       4,
-			ITextSpeed:      0,
-			ITransitionType: 1,
-			IPopupStyle:     0,
-		},
-		VAtSomeone: []send_msg_req.UidNickName{},
-		LPid:       lYyid,
-		VTagInfo:   []send_msg_req.MessageTagInfo{{IAppId: 1, STag: ""}},
-	}
-
-	sbuf := codec.NewBuffer()
-	if err = req.WriteTo(sbuf); err != nil {
-		return err
-	}
-	if err = conn.WriteMessage(websocket.BinaryMessage, sbuf.ToBytes()); err != nil {
-		return err
-	}
-	return nil
+	return errors.New("Huya danmaku sending is not supported")
 }
 
 func login(uid int64, cookies string) ([]byte, error) {

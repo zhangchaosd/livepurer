@@ -5,9 +5,11 @@ import (
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
 	"os"
+	"path/filepath"
 )
 
 func getLogWriter() zapcore.WriteSyncer {
+	_ = os.MkdirAll(filepath.Dir("./log/latest.log"), 0750)
 	lumberJackLogger := &lumberjack.Logger{
 		Filename:   "./log/latest.log",
 		MaxSize:    5,

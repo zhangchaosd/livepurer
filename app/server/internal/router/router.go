@@ -9,16 +9,16 @@ import (
 
 var r *gin.Engine
 
-func Init() *gin.Engine {
+func Init(staticDir string) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r = gin.New()
 
 	r.Use(middleware.Log())
 	r.Use(middleware.Recovery())
 	r.Use(middleware.CORS())
-	r.Use(middleware.Static())
+	r.Use(middleware.Static(staticDir))
 	// SPA需要设置此中间件，将404重新返回单页面入口，vue-router便会再次重定向回对应uri的页面
-	r.NoRoute(middleware.NoRoute())
+	r.NoRoute(middleware.NoRoute(staticDir))
 
 	g := r.Group("/api")
 	g.GET("/version", api.GetVersion)
@@ -30,7 +30,14 @@ func Init() *gin.Engine {
 		apiV1.GET("/live/room_info", v1.GetRoomInfo)
 		apiV1.POST("/live/room_infos", v1.GetRoomInfos)
 		apiV1.GET("/live/play_url", v1.GetPlayURL)
+		apiV1.GET("/live/m3u", v1.GetM3U)
 		apiV1.POST("/live/danmaku/send", v1.SendDanmaku)
+		apiV1.GET("/settings/server", v1.GetServerSettings)
+		apiV1.PUT("/settings/server", v1.SaveServerSettings)
+		apiV1.GET("/settings/account", v1.GetAccountSettings)
+		apiV1.PUT("/settings/account", v1.SaveAccountSettings)
+		apiV1.GET("/settings/channels", v1.GetChannels)
+		apiV1.PUT("/settings/channels", v1.SaveChannels)
 
 		apiV1.POST("/fav/list/add", v1.AddFavList)
 		apiV1.GET("/fav/list/get_all", v1.GetAllFavLists)

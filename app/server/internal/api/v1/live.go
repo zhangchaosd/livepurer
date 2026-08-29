@@ -52,6 +52,10 @@ func GetRoomInfo(c *gin.Context) {
 
 // GetRoomInfos 批量获取房间信息
 func GetRoomInfos(c *gin.Context) {
+	const (
+		maxRoomInfos       = 100
+		maxConcurrentFetch = 10
+	)
 	var req []*struct {
 		ID   string `form:"id" binding:"required" json:"id"`
 		Plat string `form:"plat" binding:"required,max=15" json:"plat"`
@@ -59,6 +63,10 @@ func GetRoomInfos(c *gin.Context) {
 	}
 	if err := c.ShouldBind(&req); err != nil {
 		format.HTTP(c, ecode.InvalidParams, err, nil)
+		return
+	}
+	if len(req) == 0 || len(req) > maxRoomInfos {
+		format.HTTP(c, ecode.InvalidParams, fmt.Errorf("room infos count must be between 1 and %d", maxRoomInfos), nil)
 		return
 	}
 	zap.S().Debugw("GetRoomInfos: ", "req", req)
@@ -72,19 +80,21 @@ func GetRoomInfos(c *gin.Context) {
 	wg := sync.WaitGroup{}
 	rsp := make(map[string]*model.RoomInfo, len(req)) // 响应
 	ch := make(chan *InfoWithID)                      // 并发获取的房间信息将依次写入该channel
+	sem := make(chan struct{}, maxConcurrentFetch)
 
 	// 并发获取房间信息
 	wg.Add(len(req))
 	for _, r := range req {
 		go func(id string, plat, room string) {
 			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 
 			if info, found := global.Cache.Get(format.Key(conf.BizRoomInfo, plat, room)); found {
-				ch <- &InfoWithID{
-					ID:       id,
-					RoomInfo: info.(*model.RoomInfo),
+				if roomInfo, ok := info.(*model.RoomInfo); ok {
+					ch <- &InfoWithID{ID: id, RoomInfo: roomInfo}
+					return
 				}
-				return
 			}
 
 			info, err := svc_live.GetRoomInfo(plat, room)

@@ -1,0 +1,18 @@
+# 局域网 IPTV 播放列表频道配置
+# 供 /api/v1/live/m3u 接口生成 m3u 播放列表, 供 APTV 等播放器加载
+#
+# 每个频道:
+#   plat: 平台名 (bilibili / huya / douyu / inke)
+#   room: 房间号 (长短号均可)
+#   name: 可选, 自定义频道显示名; 不填则使用直播间标题
+#   logo: 可选, 频道图标 URL (tvg-logo)
+channels:
+  - plat: douyu
+    room: "9999"
+    name: "yyf斗鱼"
+  - plat: huya
+    room: "226046"
+    name: "香菇滑鸡"
+  - plat: bilibili
+    room: "6"
+    name: "哔哩哔哩官方"

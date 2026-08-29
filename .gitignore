@@ -10,3 +10,4 @@ static
 *.log
 pure-live
 .go-cache
+web/node_modules

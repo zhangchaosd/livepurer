@@ -8,7 +8,12 @@ import (
 )
 
 func Proxy(c *gin.Context) {
-	req, err := http.NewRequestWithContext(c, c.Request.Method, c.GetHeader("PL-URL"), c.Request.Body)
+	target, err := request.ValidatePublicURL(c.GetHeader("PL-URL"), "http", "https")
+	if err != nil {
+		c.String(http.StatusBadRequest, "invalid proxy target: %v", err)
+		return
+	}
+	req, err := http.NewRequestWithContext(c, c.Request.Method, target.String(), c.Request.Body)
 
 	if err != nil {
 		c.String(http.StatusInternalServerError, err.Error())
@@ -17,14 +22,19 @@ func Proxy(c *gin.Context) {
 	defer func(Body io.ReadCloser) {
 		_ = Body.Close()
 	}(req.Body)
-	req.Header = c.Request.Header
+	req.Header = c.Request.Header.Clone()
 
 	req.Header.Del("PL-URL")
-	resp, err := request.HTTP().Client().Do(req)
+	client := *request.HTTP().Client()
+	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		c.String(http.StatusInternalServerError, err.Error())
 		return
 	}
+	defer resp.Body.Close()
 
 	for k := range resp.Header {
 		for j := range resp.Header[k] {

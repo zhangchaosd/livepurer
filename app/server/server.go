@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/iyear/pure-live-core/app/server/internal/config"
+	"github.com/iyear/pure-live-core/app/server/internal/frontend"
 	"github.com/iyear/pure-live-core/app/server/internal/logger"
 	"github.com/iyear/pure-live-core/app/server/internal/router"
 	"github.com/iyear/pure-live-core/global"
@@ -24,11 +25,6 @@ import (
 )
 
 func Run(serverConf string, accountConf string) {
-	// lal包中的nazalog
-	_ = nazalog.Init(func(option *nazalog.Option) {
-		option.IsToStdout = config.Server.Debug
-	})
-
 	if err := config.InitServer(serverConf); err != nil {
 		log.Fatalf("failed to read server config: %s", err)
 	}
@@ -38,10 +34,25 @@ func Run(serverConf string, accountConf string) {
 
 	logger.Init(util.IF(config.Server.Debug, zapcore.DebugLevel, zapcore.InfoLevel).(zapcore.LevelEnabler))
 
+	// lal包中的nazalog
+	_ = nazalog.Init(func(option *nazalog.Option) {
+		option.IsToStdout = config.Server.Debug
+	})
+
+	// 频道配置为可选: 无配置文件时仅 m3u 接口不可用, 不影响其他功能
+	channelsConf := filepath.Join(filepath.Dir(serverConf), "channels.yaml")
+	if err := config.InitChannels(channelsConf); err != nil {
+		zap.S().Warnw("failed to read channels config (m3u playlist disabled)", "path", channelsConf, "error", err)
+	}
+
 	zap.S().Infof("read config succ...")
 
 	if err := os.MkdirAll(config.Server.Path, 0774); err != nil {
 		zap.S().Fatalw("failed to mkdir", "error", err)
+	}
+	staticPath := filepath.Join(config.Server.Path, "static")
+	if err := frontend.Extract(staticPath); err != nil {
+		zap.S().Fatalw("failed to extract embedded frontend", "error", err)
 	}
 
 	sqlite, err := db.Init(filepath.Join(config.Server.Path, "data.db"))
@@ -57,11 +68,15 @@ func Run(serverConf string, accountConf string) {
 
 	zap.S().Infof("server runs on :%d,debug: %v", config.Server.Port, config.Server.Debug)
 
-	handler := router.Init()
+	handler := router.Init(staticPath)
 
 	s := &http.Server{
-		Addr:    fmt.Sprintf(":%d", config.Server.Port),
-		Handler: handler,
+		Addr:              fmt.Sprintf(":%d", config.Server.Port),
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	go func() {

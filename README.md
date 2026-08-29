@@ -74,11 +74,46 @@ chmod +x ./pure-live
 > `pure-live` 的初衷是本地或局域网的直播流推送，对 `websocket` 推送没有做压缩或优化处理。
 > 将 `pure-live` 运行在局域网内的 `NAS` 或其他小型服务器上，即可让整个局域网享受其支持。
 
+### 📺 局域网 IPTV 播放列表（APTV 等）
+
+可配置多个平台的直播间，汇总为一个固定的 IPTV 播放列表（m3u），供局域网内的 APTV、PotPlayer、VLC 等播放器加载。
+
+1. 在 `config` 目录新建 `channels.yaml`，声明要观看的频道（参考 `config/channels.yaml.example`）：
+
+```yaml
+channels:
+  - plat: douyu      # 平台名: bilibili / huya / douyu / inke
+    room: "9999"     # 房间号
+    name: "yyf斗鱼"  # 可选, 自定义频道名; 不填则使用直播间标题
+  - plat: huya
+    room: "226046"
+  - plat: bilibili
+    room: "6"
+```
+
+2. 重启程序后，在播放器中添加播放列表地址：
+
+```
+http://<局域网IP>:8800/api/v1/live/m3u
+```
+
+- 频道流地址指向稳定的 `/api/v1/live/play?plat=&room=`，由服务端在每次播放时动态解析最新流地址，**无需担心签名过期**
+- 可选参数：`?online=1` 仅输出在线频道；`?refresh=1` 跳过缓存强制刷新
+- 在线频道排在列表前面
+
 ### 前端（Web 界面）
 
-本仓库（纯 core 版）的 `Release` **不内置前端页面**，仅提供 CLI 二进制与后端 API。
+Release 已内置 Web 管理界面；启动服务后访问 `http://<服务器地址>:<端口>/` 即可使用。
 
-如需 Web 界面，可将任意符合 [API 文档](./docs/API.md) 的前端构建产物放入程序运行目录下的 `static` 文件夹中；原前端仓库（Vue）可参考：https://github.com/iyear/pure-live-frontend
+界面支持直播间查询、播放入口、收藏夹、IPTV 频道/M3U 管理、系统状态和服务/账号配置。前端资源被嵌入可执行文件，启动时会释放到数据目录的 `static` 文件夹，因此运行不需要 Node.js、npm 或额外前端文件。
+
+开发前端时运行：
+
+```shell
+cd web
+npm ci
+npm run dev
+```
 
 ## ⚙️ 命令行
 
