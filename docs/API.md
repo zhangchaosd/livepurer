@@ -40,8 +40,8 @@
   "code": 0,
   "msg": "ok",
   "data": {
-    "runtime": "go1.17.3 windows/amd64",
-    "ver": "v0.1.0"
+    "runtime": "go1.25.14 darwin/arm64",
+    "ver": "v0.1.4"
   }
 }
 ```
