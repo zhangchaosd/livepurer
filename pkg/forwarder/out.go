@@ -21,31 +21,35 @@ func OutLoop(conn net.Conn, pullURL string, rawURL string, in In) error {
 	sub.WriteHttpResponseHeader()
 	sub.WriteFlvHeader()
 
-	if err = Pull(in, pullURL, func(tag httpflv.Tag) {
-		sub.Write(tag.Raw)
-	}); err != nil {
-		return err
-	}
-
+	// RunLoop 处理与客户端的读写
 	go func() {
 		_ = sub.RunLoop()
 	}()
 
+	// 后台拉流并转发, 避免阻塞主循环的存活检测
+	pullDone := make(chan error, 1)
+	go func() {
+		pullDone <- Pull(in, pullURL, func(tag httpflv.Tag) {
+			sub.Write(tag.Raw)
+		})
+	}()
+
 	tick := time.NewTicker(500 * time.Millisecond)
+	defer tick.Stop()
 	for {
-		<-tick.C
-		_, write := sub.IsAlive()
-		if !write {
-			break
+		select {
+		case err := <-pullDone:
+			// 拉流结束(流结束或出错)
+			_ = sub.Dispose()
+			return err
+		case <-tick.C:
+			_, write := sub.IsAlive()
+			if !write {
+				// 客户端断开
+				_ = sub.Dispose()
+				_ = in.Shutdown()
+				return nil
+			}
 		}
 	}
-	tick.Stop()
-
-	if err = sub.Dispose(); err != nil {
-		return err
-	}
-	if err = in.Shutdown(); err != nil {
-		return err
-	}
-	return nil
 }

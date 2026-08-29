@@ -27,23 +27,23 @@ func GetIn(tp string) In {
 
 // Flv flv pull session
 type Flv struct {
-	session *httpflv.PullSession
+	puller *FlvPuller
 }
 
 // Pull pull flv stream
+// 使用自定义 FlvPuller(支持斗鱼等只提供 RSA 密钥交换 TLS 套件的 CDN)
 func (s *Flv) Pull(pullURL string, fn func(tag httpflv.Tag)) error {
-	session := httpflv.NewPullSession()
-	s.session = session
-
-	if err := session.Pull(pullURL, fn); err != nil {
-		return err
-	}
-	return nil
+	puller := NewFlvPuller(pullURL, "", "")
+	s.puller = puller
+	return puller.Pull(fn)
 }
 
 // Shutdown shutdown flv session
 func (s *Flv) Shutdown() error {
-	return s.session.Dispose()
+	if s.puller != nil {
+		return s.puller.Shutdown()
+	}
+	return nil
 }
 
 // Rtmp rtmp pull session
