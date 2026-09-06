@@ -15,6 +15,10 @@ const flvResponseHeader = "HTTP/1.1 200 OK\r\n" +
 	"Access-Control-Allow-Credentials: true\r\n" +
 	"Access-Control-Allow-Origin: *\r\n\r\n"
 
+// Bound queued tags to absorb short CDN bursts without unbounded buffering.
+// The media duration varies with stream frame rate.
+const flvTagBufferSize = 64
+
 func Pull(in In, pullURL string, fn func(tag httpflv.Tag)) error {
 	return in.Pull(pullURL, fn)
 }
@@ -26,52 +30,52 @@ type PullURLRefresher func() (string, error)
 // flvPacer 让上游突发发送的 FLV 标签按媒体时间实时输出，并在续拉时
 // 跳过 CDN 缓冲区带来的重叠帧，避免客户端出现快进后重复播放。
 type flvPacer struct {
-	lastTimestamp uint32
-	hasTimestamp  bool
+	lastTimestamp [2]uint32
+	hasTimestamp  [2]bool
+	started       bool
+	mediaStart    uint32
+	wallStart     time.Time
 }
 
 func (p *flvPacer) write(tag httpflv.Tag, stop <-chan struct{}, write func([]byte)) bool {
-	if tag.Header.Type != 8 && tag.Header.Type != 9 { // 仅以音视频帧作为时间基准
+	if tag.Header.Type != 8 && tag.Header.Type != 9 || isCodecConfig(tag) {
 		write(tag.Raw)
 		return true
 	}
-
-	if p.hasTimestamp {
-		if tag.Header.Timestamp < p.lastTimestamp {
-			// 新片段回退到已播放的 CDN 缓冲区。音视频配置帧仍要保留，
-			// 其余旧帧跳过，直到时间戳追上当前播放位置。
-			if isCodecConfig(tag) {
-				write(tag.Raw)
-			}
-			return true
-		}
-		if tag.Header.Timestamp == p.lastTimestamp {
-			write(tag.Raw)
-			return true
-		}
-		delta := tag.Header.Timestamp - p.lastTimestamp
-		// 不因异常时间戳或大跳变长时间阻塞；正常直播帧间隔远小于此值。
-		if delta <= 2_000 {
-			timer := time.NewTimer(time.Duration(delta) * time.Millisecond)
-			select {
-			case <-stop:
-				timer.Stop()
-				return false
-			case <-timer.C:
-			}
+	track := int(tag.Header.Type - 8)
+	ts := tag.Header.Timestamp
+	// Audio and video clocks are interleaved; compare only within each track.
+	if p.hasTimestamp[track] && int32(ts-p.lastTimestamp[track]) < 0 {
+		return true
+	}
+	if !p.started {
+		p.started = true
+		p.mediaStart = ts
+		p.wallStart = time.Now()
+	}
+	// Use an absolute deadline: upstream I/O and previous writes already consume
+	// media time. Sleeping a full frame interval again progressively stalls playback.
+	delay := time.Until(p.wallStart.Add(time.Duration(int32(ts-p.mediaStart)) * time.Millisecond))
+	if delay > 2*time.Second {
+		p.mediaStart, p.wallStart = ts, time.Now()
+	} else if delay > 0 {
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+		select {
+		case <-stop:
+			return false
+		case <-timer.C:
 		}
 	}
-
-	p.lastTimestamp = tag.Header.Timestamp
-	p.hasTimestamp = true
+	p.lastTimestamp[track], p.hasTimestamp[track] = ts, true
 	write(tag.Raw)
 	return true
 }
 
 func isCodecConfig(tag httpflv.Tag) bool {
 	// AVC/AAC sequence headers，保留它们让下一段的解码器保持可用。
-	return (tag.Header.Type == 9 && len(tag.Raw) >= 13 && tag.Raw[12] == 0) ||
-		(tag.Header.Type == 8 && len(tag.Raw) >= 13 && tag.Raw[12] == 0)
+	return (tag.Header.Type == 9 && len(tag.Raw) >= 13 && tag.Raw[11]&15 == 7 && tag.Raw[12] == 0) ||
+		(tag.Header.Type == 8 && len(tag.Raw) >= 13 && tag.Raw[11]>>4 == 10 && tag.Raw[12] == 0)
 }
 
 func OutLoop(conn net.Conn, pullURL string, rawURL string, in In, refresh PullURLRefresher) error {
@@ -94,17 +98,39 @@ func OutLoop(conn net.Conn, pullURL string, rawURL string, in In, refresh PullUR
 		close(clientDone)
 	}()
 
-	// 后台拉流并转发, 避免阻塞主循环的存活检测。
-	// 直播 CDN 的一次 HTTP-FLV 响应可能只是一个短片段，因此正常 EOF 也要续拉。
-	pullDone := make(chan error, 1)
 	stopPull := make(chan struct{})
 	defer close(stopPull)
+
+	// 写入端按直播时间实时输出；与上游拉流分离，避免上游短片段切换时
+	// 直接暴露为电视端的卡顿。
+	tags := make(chan httpflv.Tag, flvTagBufferSize)
+	writerDone := make(chan struct{})
 	go func() {
-		currentURL := pullURL
+		defer close(writerDone)
 		pacer := flvPacer{}
 		for {
+			select {
+			case <-stopPull:
+				return
+			case tag := <-tags:
+				if !pacer.write(tag, stopPull, sub.Write) {
+					return
+				}
+			}
+		}
+	}()
+
+	// 后台拉流并缓冲。直播 CDN 的一次 HTTP-FLV 响应可能只是一个短片段，
+	// 因此正常 EOF 也要续拉。
+	pullDone := make(chan error, 1)
+	go func() {
+		currentURL := pullURL
+		for {
 			err := Pull(in, currentURL, func(tag httpflv.Tag) {
-				pacer.write(tag, stopPull, sub.Write)
+				select {
+				case <-stopPull:
+				case tags <- tag:
+				}
 			})
 			select {
 			case <-stopPull:
@@ -148,6 +174,10 @@ func OutLoop(conn net.Conn, pullURL string, rawURL string, in In, refresh PullUR
 			return err
 		case <-clientDone:
 			// 客户端断开
+			_ = sub.Dispose()
+			_ = in.Shutdown()
+			return nil
+		case <-writerDone:
 			_ = sub.Dispose()
 			_ = in.Shutdown()
 			return nil

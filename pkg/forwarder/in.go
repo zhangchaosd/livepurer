@@ -5,6 +5,7 @@ import (
 	"github.com/q191201771/lal/pkg/httpflv"
 	"github.com/q191201771/lal/pkg/remux"
 	"github.com/q191201771/lal/pkg/rtmp"
+	"sync"
 )
 
 // In live stream pull interface
@@ -27,19 +28,31 @@ func GetIn(tp string) In {
 
 // Flv flv pull session
 type Flv struct {
-	puller *FlvPuller
+	mu      sync.Mutex
+	stopped bool
+	puller  *FlvPuller
 }
 
 // Pull pull flv stream
 // 使用自定义 FlvPuller(支持斗鱼等只提供 RSA 密钥交换 TLS 套件的 CDN)
 func (s *Flv) Pull(pullURL string, fn func(tag httpflv.Tag)) error {
 	puller := NewFlvPuller(pullURL, "", "")
+	s.mu.Lock()
+	if s.stopped {
+		s.mu.Unlock()
+		puller.Shutdown()
+		return nil
+	}
 	s.puller = puller
+	s.mu.Unlock()
 	return puller.Pull(fn)
 }
 
 // Shutdown shutdown flv session
 func (s *Flv) Shutdown() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.stopped = true
 	if s.puller != nil {
 		return s.puller.Shutdown()
 	}

@@ -8,6 +8,7 @@ import (
 	"github.com/iyear/pure-live-core/service/svc_live"
 	"go.uber.org/zap"
 	"net/http"
+	"time"
 )
 
 func Play(c *gin.Context) {
@@ -74,6 +75,10 @@ func Play(c *gin.Context) {
 		return
 	}
 	defer conn.Close()
+	// Hijacked live streams must not inherit the HTTP request deadlines.
+	if err := conn.SetDeadline(time.Time{}); err != nil {
+		return
+	}
 
 	rawURL := fmt.Sprintf("http://localhost%s", c.Request.URL.RequestURI())
 	if err = forwarder.OutLoop(conn, pullURL, rawURL, in, refresh); err != nil {

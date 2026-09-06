@@ -40,6 +40,7 @@ archives:
       - README.md
       - config/server.yaml.example
       - config/account.yaml.example
+      - config/channels.yaml.example
       - LICENSE
 changelog:
   use: github

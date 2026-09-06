@@ -79,15 +79,20 @@ func Run(serverConf string, accountConf string) {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	go func() {
-		if err := s.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			zap.S().Infow("failed to start to listen and serve", "error", err, "port", config.Server.Port)
-		}
-	}()
+	serveErrors := make(chan error, 1)
+	go func() { serveErrors <- s.ListenAndServe() }()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	defer signal.Stop(quit)
+	select {
+	case <-quit:
+	case err := <-serveErrors:
+		if err != nil && err != http.ErrServerClosed {
+			zap.S().Fatalw("failed to listen and serve", "error", err)
+		}
+		return
+	}
 	zap.S().Info("shutdown server...")
 
 	ctx, stop := context.WithTimeout(context.Background(), 5*time.Second)
