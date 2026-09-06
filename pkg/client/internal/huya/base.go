@@ -2,7 +2,9 @@ package huya
 
 import (
 	"crypto/md5"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"github.com/TarsCloud/TarsGo/tars/protocol/codec"
@@ -19,6 +21,7 @@ import (
 	"github.com/iyear/pure-live-core/pkg/client/internal/huya/internal/tars/ws_verify_cookie_req"
 	"github.com/iyear/pure-live-core/pkg/conf"
 	"github.com/iyear/pure-live-core/pkg/util"
+	"github.com/tidwall/gjson"
 	"net/url"
 	"path"
 	"strconv"
@@ -53,22 +56,11 @@ func (h *Huya) Plat() string {
 
 // GetPlayURL .
 func (h *Huya) GetPlayURL(room string, qn int) (*model.PlayURL, error) {
-	liveLine := ""
-	json, err := getRoomInfo(room)
+	roomInfo, err := getRoomInfo(room)
 	if err != nil {
 		return nil, err
 	}
-	if liveLine = json.Get("roomProfile.liveLineUrl").String(); liveLine == "" {
-		return nil, fmt.Errorf("no broadcast or live room")
-	}
-	b64, err := base64.StdEncoding.DecodeString(liveLine)
-	if err != nil {
-		return nil, err
-	}
-	link := strings.ReplaceAll(string(b64), "hls", "flv")
-	link = strings.ReplaceAll(link, "m3u8", "flv")
-
-	u, err := url.Parse(fmt.Sprintf("https:%s", link))
+	u, err := nativeFLVURL(roomInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -86,6 +78,42 @@ func (h *Huya) GetPlayURL(room string, qn int) (*model.PlayURL, error) {
 	}, err
 }
 
+func nativeFLVURL(roomInfo gjson.Result) (*url.URL, error) {
+	// Use native FLV endpoints. Rewriting a mobile HLS URL retains mobile
+	// anti-code parameters and can return short/repeated fragments.
+	lines := roomInfo.Get("roomInfo.tLiveInfo.tLiveStreamInfo.vStreamInfo.value").Array()
+	var u *url.URL
+	var err error
+	// HS and AL provide continuous FLV responses; TX can redirect to a CDN with
+	// an invalid TLS hostname. Never bypass certificate validation.
+	for _, cdn := range []string{"HS", "AL", "TX"} {
+		for _, line := range lines {
+			if line.Get("sCdnType").String() != cdn {
+				continue
+			}
+			endpoint := line.Get("sFlvUrl").String()
+			name := line.Get("sStreamName").String()
+			code := line.Get("sFlvAntiCode").String()
+			if endpoint == "" || name == "" || code == "" {
+				continue
+			}
+			u, err = url.Parse(endpoint + "/" + name + ".flv?" + code)
+			if err != nil {
+				return nil, err
+			}
+			u.Scheme = "https"
+			break
+		}
+		if u != nil {
+			break
+		}
+	}
+	if u == nil {
+		return nil, fmt.Errorf("no available Huya FLV stream")
+	}
+	return u, nil
+}
+
 func configurePlayURL(u *url.URL) {
 	query := u.Query()
 	// 设置最高清晰度
@@ -97,33 +125,43 @@ func configurePlayURL(u *url.URL) {
 	u.RawQuery = query.Encode()
 }
 
-// refreshAntiCode 为每次取流生成新的虎牙防盗链签名。虎牙的 FLV CDN 通常只
-// 返回数秒的片段；重复使用同一个 seqid 会重复返回旧片段，导致播放器看似断流。
+// refreshAntiCode signs the native FLV request using the web client's two-stage
+// digest. Signing the raw seqid (the legacy scheme) yields truncated streams.
 func refreshAntiCode(u *url.URL, now time.Time) error {
-	query := u.Query()
-	fm := query.Get("fm")
-	wsTime := query.Get("wsTime")
-	if fm == "" || wsTime == "" {
-		return fmt.Errorf("invalid Huya anti-code")
+	var random [4]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return err
 	}
+	return refreshAntiCodeWithUID(u, now, 12340000+binary.BigEndian.Uint32(random[:])%10000)
+}
 
-	decoded, err := base64.StdEncoding.DecodeString(fm)
+func refreshAntiCodeWithUID(u *url.URL, now time.Time, uid uint32) error {
+	query := u.Query()
+	decoded, err := base64.StdEncoding.DecodeString(query.Get("fm"))
 	if err != nil {
 		return fmt.Errorf("decode Huya anti-code: %w", err)
 	}
 	prefix := strings.SplitN(string(decoded), "_", 2)[0]
 	streamName := strings.TrimSuffix(path.Base(u.Path), path.Ext(u.Path))
-	if prefix == "" || streamName == "" {
-		return fmt.Errorf("invalid Huya stream URL")
+	wsTime := query.Get("wsTime")
+	if prefix == "" || streamName == "" || wsTime == "" {
+		return fmt.Errorf("invalid Huya anti-code")
 	}
-	seqID := strconv.FormatInt(now.UnixNano()/100, 10)
-	signature := strings.Join([]string{prefix, "0", streamName, seqID, wsTime}, "_")
-	secret := fmt.Sprintf("%x", md5.Sum([]byte(signature)))
-
-	query.Set("wsSecret", secret)
-	query.Set("u", "0")
+	convertedUID := strconv.FormatUint(uint64(uid<<8|uid>>24), 10)
+	seqID := strconv.FormatInt(now.UnixMilli()+int64(uid), 10)
+	// Native web FLV parameters must be signed together, not inherited from HLS.
+	query.Set("ctype", "huya_live")
+	query.Set("t", "100")
+	inner := fmt.Sprintf("%x", md5.Sum([]byte(seqID+"|huya_live|100")))
+	signature := strings.Join([]string{prefix, convertedUID, streamName, inner, wsTime}, "_")
+	query.Set("wsSecret", fmt.Sprintf("%x", md5.Sum([]byte(signature))))
+	query.Set("u", convertedUID)
 	query.Set("seqid", seqID)
+	query.Set("sdk_sid", strconv.FormatInt(now.UnixMilli(), 10))
+	query.Set("ver", "1")
+	query.Set("sv", "2401090219")
 	query.Del("fm")
+	query.Del("txyp")
 	u.RawQuery = query.Encode()
 	return nil
 }

@@ -23,8 +23,8 @@ func Pull(in In, pullURL string, fn func(tag httpflv.Tag)) error {
 	return in.Pull(pullURL, fn)
 }
 
-// PullURLRefresher 返回一个新的上游地址。部分 CDN（例如虎牙）会在数秒后
-// 主动结束 HTTP-FLV 片段；此时需要重新解析地址后续拉，而不是关闭播放端连接。
+// PullURLRefresher resolves a fresh upstream address after a disconnect.
+// Correctly signed Huya FLV streams are continuous; reconnect is recovery only.
 type PullURLRefresher func() (string, error)
 
 // flvPacer 让上游突发发送的 FLV 标签按媒体时间实时输出，并在续拉时
