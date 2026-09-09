@@ -11,3 +11,6 @@ static
 pure-live
 .go-cache
 web/node_modules
+
+web/test-results
+web/playwright-report

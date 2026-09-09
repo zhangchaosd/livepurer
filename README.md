@@ -38,28 +38,6 @@
 
 ## 🛠️ 部署
 
-### Docker（本地构建）
-
-`Release` 不附带 Docker 镜像，可在本地自行构建：
-
-```shell
-docker build -t livepurer .
-
-# 启动
-docker run --name livepurer -p <HOST_PORT>:8800 -d --restart=always livepurer:latest
-
-# 或添加 -v 参数
-docker run --name livepurer -p <HOST_PORT>:8800 -v /HOST/PATH/DATA:/data -v /HOST/PATH/LOG:/log -d --restart=always livepurer:latest
-
-# 查看 log
-docker logs -f livepurer
-
-# 设置账户/服务器配置文件
-docker cp PATH/TO/account.yaml livepurer:/config/account.yaml
-docker cp PATH/TO/server.yaml livepurer:/config/server.yaml
-docker restart livepurer
-```
-
 ### 二进制部署
 
 下载 [Release](https://github.com/zhangchaosd/livepurer/releases) 的最新打包文件，解压后重命名 `config` 目录下的 `server.yaml.example` 为 `server.yaml`、`account.yaml.example` 为 `account.yaml`，填写相关信息。
@@ -105,7 +83,22 @@ http://<局域网IP>:8800/api/v1/live/m3u
 
 Release 已内置 Web 管理界面；启动服务后访问 `http://<服务器地址>:<端口>/` 即可使用。
 
-界面支持直播间查询、播放入口、收藏夹、IPTV 频道/M3U 管理、系统状态和服务/账号配置。前端资源被嵌入可执行文件，启动时会释放到数据目录的 `static` 文件夹，因此运行不需要 Node.js、npm 或额外前端文件。
+界面包含总览、直播播放、我的收藏、IPTV 频道与设置五个页面，支持最近打开记录、收藏搜索、频道草稿校验/排序/撤销、复制与下载 M3U、系统状态和分组设置。订阅与分享地址自动使用本机局域网 IP（优先 192.168 网段），无需手动替换回环地址。桌面与手机均可使用，支持键盘操作和对话框焦点管理。前端资源被嵌入可执行文件，启动时会释放到数据目录的 `static` 文件夹，因此运行不需要 Node.js、npm 或额外前端文件。
+
+### 从源码构建二进制
+
+构建需要 Go 1.25+ 和 Node.js 24+。运行只需要二进制程序及配置，不需要 Node.js 或前端资源目录。
+
+```shell
+make build
+cp config/server.yaml.example config/server.yaml
+cp config/account.yaml.example config/account.yaml
+./bin/pure-live run
+```
+
+已有配置时请保留原文件，不要重复复制。`make build` 构建当前操作系统与架构，输出为 `bin/pure-live`。也可使用 `make build BINARY=bin/pure-live.exe` 自定义输出文件名。跨平台发行包由 Release 工作流生成；本地安装 GoReleaser 后可运行 `make release`。
+
+### 界面开发
 
 开发前端时运行：
 
@@ -124,7 +117,7 @@ npm run dev
 ```
 
 ```
-v0.1.6
+v0.2.0
 go1.25.14 darwin/arm64
 ```
 
@@ -250,3 +243,14 @@ AGPL-3.0 License
 虎牙取流改用平台提供的原生 FLV 线路及两层摘要签名，避免旧移动端 HLS 地址改写和旧签名导致频繁返回短流。优先使用 HS、AL 线路，保留 TLS 证书校验。
 
 2026-09-06 对房间 `226046` 的本机对照采样：旧版 45 秒输出 340 个音视频标签；修复版 90 秒输出 9,186 个标签，时间戳零回退，超过 250ms 的输出间隔仅一次（537ms）。网页已验证实际画面。数据反映本次网络环境，电视解码与局域网性能仍应以实机播放为准。
+
+### UI 设计与验证
+
+交互设计见 [Figma 设计稿](https://www.figma.com/design/Ufe0pLRyK97YtUwi6UQs2y)。实现与交互说明见 [UI 设计说明](docs/UI.md)。
+
+```shell
+npm --prefix web run typecheck
+npm --prefix web test
+```
+
+首次运行浏览器测试先执行 `cd web && npx playwright install chromium`。测试使用隔离的模拟数据，不会修改实际收藏与配置。

@@ -1,16 +1,26 @@
 {
   "name": "pure-live-web",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
-    "build": "vite build",
-    "dev": "vite"
+    "build": "vue-tsc --noEmit && vite build",
+    "dev": "vite",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "playwright test",
+    "format": "prettier --write src tests *.ts *.json index.html"
   },
   "dependencies": {
-    "@vitejs/plugin-vue": "latest",
     "flv.js": "^1.6.2",
-    "vite": "latest",
     "vue": "latest"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.5.0",
+    "@vitejs/plugin-vue": "latest",
+    "prettier": "^3.9.6",
+    "typescript": "5.9.3",
+    "vite": "latest",
+    "vue-tsc": "^3.3.11"
   }
 }

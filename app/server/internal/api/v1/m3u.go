@@ -9,7 +9,9 @@ import (
 	"github.com/iyear/pure-live-core/pkg/format"
 	"github.com/iyear/pure-live-core/service/svc_fav"
 	"github.com/iyear/pure-live-core/service/svc_live"
+	"github.com/iyear/pure-live-core/service/svc_os"
 	"go.uber.org/zap"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -182,5 +184,24 @@ func schemeHost(c *gin.Context) string {
 	if c.Request.TLS != nil {
 		scheme = "https"
 	}
-	return fmt.Sprintf("%s://%s", scheme, c.Request.Host)
+	return fmt.Sprintf("%s://%s", scheme, lanHost(c.Request.Host, svc_os.LANIPv4()))
+}
+
+// Rewrite local-only hosts in downloaded playlists while preserving the port.
+func lanHost(host, lanIP string) string {
+	if lanIP == "" {
+		return host
+	}
+	hostname, port, err := net.SplitHostPort(host)
+	if err != nil {
+		hostname = strings.Trim(host, "[]")
+	}
+	ip := net.ParseIP(hostname)
+	if !strings.EqualFold(hostname, "localhost") && (ip == nil || !ip.IsLoopback()) {
+		return host
+	}
+	if port != "" {
+		return net.JoinHostPort(lanIP, port)
+	}
+	return lanIP
 }

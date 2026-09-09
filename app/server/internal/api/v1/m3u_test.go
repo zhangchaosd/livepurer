@@ -35,3 +35,19 @@ func TestFavoriteListID(t *testing.T) {
 		}
 	}
 }
+
+func TestLANHost(t *testing.T) {
+	for _, tt := range []struct{ host, ip, want string }{
+		{"127.0.0.1:18800", "192.168.1.9", "192.168.1.9:18800"},
+		{"localhost:8800", "192.168.1.9", "192.168.1.9:8800"},
+		{"[::1]:8800", "10.0.0.2", "10.0.0.2:8800"},
+		{"localhost", "192.168.1.9", "192.168.1.9"},
+		{"example.com:443", "192.168.1.9", "example.com:443"},
+		{"192.168.1.2:8800", "192.168.1.9", "192.168.1.2:8800"},
+		{"127.0.0.1:8800", "", "127.0.0.1:8800"},
+	} {
+		if got := lanHost(tt.host, tt.ip); got != tt.want {
+			t.Errorf("lanHost(%q, %q) = %q, want %q", tt.host, tt.ip, got, tt.want)
+		}
+	}
+}

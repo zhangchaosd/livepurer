@@ -1,8 +1,8 @@
 package v1
 
 import (
+	"fmt"
 	"github.com/gin-gonic/gin"
-	"github.com/iyear/pure-live-core/model"
 	"github.com/iyear/pure-live-core/pkg/ecode"
 	"github.com/iyear/pure-live-core/pkg/format"
 	"github.com/iyear/pure-live-core/service/svc_os"
@@ -53,43 +53,32 @@ func GetSelfCPU(c *gin.Context) {
 	format.HTTP(c, ecode.Success, nil, r)
 }
 
+// GetOSAll preserves supported metrics when a platform cannot provide another
+// metric (for example, system CPU usage in a CGO-disabled macOS binary).
 func GetOSAll(c *gin.Context) {
-	info := &model.OSInfo{}
-	sysCPU := &model.SysCPU{}
-	selfCPU := &model.SelfCPU{}
-	sysMem := &model.SysMem{}
-	selfMem := &model.SelfMem{}
-
-	err := func() error {
-		var err error
-		if info, err = svc_os.GetOSInfo(); err != nil {
-			return err
-		}
-		if sysCPU, err = svc_os.GetSysCPU(); err != nil {
-			return err
-		}
-		if selfCPU, err = svc_os.GetSelfCPU(); err != nil {
-			return err
-		}
-		if sysMem, err = svc_os.GetSysMem(); err != nil {
-			return err
-		}
-		if selfMem, err = svc_os.GetSelfMem(); err != nil {
-			return err
-		}
-		return nil
-	}()
-
-	if err != nil {
-		format.HTTP(c, ecode.ErrorGetOsAll, err, nil)
+	metrics := gin.H{}
+	unavailable := []string{}
+	collectOSMetric(metrics, &unavailable, "info", svc_os.GetOSInfo)
+	collectOSMetric(metrics, &unavailable, "sys_cpu", svc_os.GetSysCPU)
+	collectOSMetric(metrics, &unavailable, "self_cpu", svc_os.GetSelfCPU)
+	collectOSMetric(metrics, &unavailable, "sys_mem", svc_os.GetSysMem)
+	collectOSMetric(metrics, &unavailable, "self_mem", svc_os.GetSelfMem)
+	if len(metrics) == 0 {
+		format.HTTP(c, ecode.ErrorGetOsAll, fmt.Errorf("system metrics are unavailable"), nil)
 		return
 	}
+	if len(unavailable) > 0 {
+		metrics["unavailable"] = unavailable
+	}
+	metrics["lan_ip"] = svc_os.LANIPv4()
+	format.HTTP(c, ecode.Success, nil, metrics)
+}
 
-	format.HTTP(c, ecode.Success, nil, gin.H{
-		"info":     info,
-		"sys_cpu":  sysCPU,
-		"self_cpu": selfCPU,
-		"sys_mem":  sysMem,
-		"self_mem": selfMem,
-	})
+func collectOSMetric[T any](metrics gin.H, unavailable *[]string, name string, read func() (T, error)) {
+	value, err := read()
+	if err != nil {
+		*unavailable = append(*unavailable, name)
+		return
+	}
+	metrics[name] = value
 }
