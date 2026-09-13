@@ -13,6 +13,8 @@ type PlayURL struct {
 
 // RoomInfo live room info
 type RoomInfo struct {
+	Cover  string `json:"cover"`  // 平台封面或预览图
+	Avatar string `json:"avatar"` // 封面不可用时的主播头像
 	Status int    `json:"status"` // 0:未开播 1:已开播
 	Room   string `json:"room"`   // 真实房间号
 	Upper  string `json:"upper"`  // 主播名称

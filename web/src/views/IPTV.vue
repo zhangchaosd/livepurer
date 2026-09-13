@@ -164,10 +164,10 @@ function remove(index: number) {
           </button>
         </div>
         <label v-if="expanded === channel.key" class="channel-logo field"
-          >频道图标地址<input
+          >自定义封面地址<input
             v-model="channel.logo"
             type="url"
-            placeholder="https://example.com/logo.png（可选）"
+            placeholder="留空自动使用平台封面或主播头像"
         /></label></fieldset
     ></template>
   </section>

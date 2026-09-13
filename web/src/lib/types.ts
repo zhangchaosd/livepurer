@@ -1,7 +1,13 @@
 export type Platform = "bilibili" | "douyu" | "huya" | "inke";
 export type Page = "dashboard" | "live" | "favorites" | "iptv" | "settings";
 export type Room = { plat: Platform; room: string };
-export type RoomInfo = { upper: string; title: string; status: boolean };
+export type RoomInfo = {
+  cover?: string;
+  avatar?: string;
+  upper: string;
+  title: string;
+  status: boolean;
+};
 export type Channel = Room & { name: string; logo: string; key?: string };
 export type Favorite = Room & { id: number; upper: string; order: number };
 export type FavoriteList = {

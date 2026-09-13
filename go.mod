@@ -25,6 +25,7 @@ require (
 	github.com/xuri/excelize/v2 v2.11.0
 	go.uber.org/zap v1.28.0
 	go.yaml.in/yaml/v3 v3.0.4
+	golang.org/x/image v0.38.0
 	golang.org/x/net v0.56.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gorm.io/gorm v1.31.2

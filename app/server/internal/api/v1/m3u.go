@@ -87,7 +87,7 @@ func GetM3U(c *gin.Context) {
 				Room: ch.Room,
 			}
 
-			key := fmt.Sprintf("m3u_%s_%s_%s", ch.Plat, ch.Room, ch.Name)
+			key := fmt.Sprintf("m3u_%s_%s_%s", ch.Plat, ch.Room, ch.Name+"\x00"+ch.Logo)
 			var cached *M3UEntry
 			if !forceRefresh {
 				if v, ok := globalCacheGet(key); ok {
@@ -139,10 +139,7 @@ func GetM3U(c *gin.Context) {
 		if name == "" {
 			name = fmt.Sprintf("%s %s", e.Plat, e.Room)
 		}
-		attrs := ""
-		if e.Logo != "" {
-			attrs = fmt.Sprintf(` tvg-logo="%s"`, m3uText(e.Logo))
-		}
+		attrs := fmt.Sprintf(` tvg-logo="%s"`, m3uText(channelLogoURL(c, e)))
 		if !e.Online {
 			attrs += " tvg-chnum-live=\"false\""
 		}
@@ -204,4 +201,12 @@ func lanHost(host, lanIP string) string {
 		return net.JoinHostPort(lanIP, port)
 	}
 	return lanIP
+}
+
+func channelLogoURL(c *gin.Context, entry M3UEntry) string {
+	if strings.TrimSpace(entry.Logo) != "" {
+		return entry.Logo
+	}
+	query := url.Values{"plat": {entry.Plat}, "room": {entry.Room}}
+	return fmt.Sprintf("%s/api/v1/live/cover?%s", schemeHost(c), query.Encode())
 }

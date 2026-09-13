@@ -173,6 +173,8 @@ func (h *Huya) GetRoomInfo(room string) (*model.RoomInfo, error) {
 		return nil, err
 	}
 	return &model.RoomInfo{
+		Cover:  j.Get("roomInfo.tLiveInfo.sScreenshot").String(),
+		Avatar: j.Get("roomInfo.tProfileInfo.sAvatar180").String(),
 		Status: util.IF(j.Get("roomInfo.eLiveStatus").Int() == 2, 1, 0).(int),
 		Room:   room,
 		Upper:  j.Get("roomInfo.tProfileInfo.sNick").String(),

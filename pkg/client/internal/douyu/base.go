@@ -168,6 +168,8 @@ func (d *Douyu) GetRoomInfo(room string) (*model.RoomInfo, error) {
 			OwnerName  string `json:"owner_name"`
 			RoomStatus string `json:"room_status"`
 			RoomName   string `json:"room_name"`
+			RoomThumb  string `json:"room_thumb"`
+			Avatar     string `json:"avatar"`
 		} `json:"data"`
 	}
 	if err := request.HTTP().GET(fmt.Sprintf("https://open.douyucdn.cn/api/RoomApi/room/%s", room)).BindJSON(&info).Do(); err != nil {
@@ -180,6 +182,8 @@ func (d *Douyu) GetRoomInfo(room string) (*model.RoomInfo, error) {
 	}
 	link := fmt.Sprintf("https://www.douyu.com/%s", info.Data.RoomId)
 	return &model.RoomInfo{
+		Cover:  info.Data.RoomThumb,
+		Avatar: info.Data.Avatar,
 		Status: util.IF(info.Data.RoomStatus == "1", 1, 0).(int),
 		Room:   info.Data.RoomId,
 		Upper:  info.Data.OwnerName,

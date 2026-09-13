@@ -52,6 +52,8 @@ func (i *Inke) GetRoomInfo(room string) (*model.RoomInfo, error) {
 	}
 
 	return &model.RoomInfo{
+		Cover:  info.Get("data.live_image").String(),
+		Avatar: info.Get("data.media_info.portrait").String(),
 		Status: 1,
 		Room:   room,
 		Upper:  info.Get("data.media_info.nick").String(),

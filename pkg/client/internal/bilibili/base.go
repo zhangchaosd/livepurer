@@ -1,10 +1,12 @@
 package bilibili
 
 import (
+	"fmt"
 	"github.com/iyear/biligo"
 	"github.com/iyear/pure-live-core/model"
 	"github.com/iyear/pure-live-core/pkg/client/internal/abstract"
 	"github.com/iyear/pure-live-core/pkg/conf"
+	"github.com/iyear/pure-live-core/pkg/request"
 	"github.com/iyear/pure-live-core/pkg/util"
 	"strconv"
 )
@@ -73,26 +75,36 @@ func (c *base) GetPlayURL(room string, qn int) (*model.PlayURL, error) {
 
 // GetRoomInfo .
 func (c *base) GetRoomInfo(room string) (*model.RoomInfo, error) {
-	t := biligo.NewCommClient(&biligo.CommSetting{})
 	roomNum, err := strconv.ParseInt(room, 10, 64)
+	if err != nil || roomNum <= 0 {
+		return nil, fmt.Errorf("invalid room ID")
+	}
+	var response roomInfoResponse
+	headers := map[string]string{"User-Agent": "Mozilla/5.0", "Referer": "https://live.bilibili.com/"}
+	if err := request.HTTP().GET(fmt.Sprintf("https://api.live.bilibili.com/room/v1/Room/get_info?room_id=%d", roomNum)).SetHeader(headers).BindJSON(&response).Do(); err != nil {
+		return nil, err
+	}
+	info, err := response.roomInfo()
 	if err != nil {
 		return nil, err
 	}
-	info, err := t.LiveGetRoomInfoByID(roomNum)
-	if err != nil {
-		return nil, err
+	// Anchor enrichment must not discard an otherwise valid room and cover.
+	var anchor struct {
+		Code int `json:"code"`
+		Data struct {
+			Info struct {
+				Name string `json:"uname"`
+				Face string `json:"face"`
+			} `json:"info"`
+		} `json:"data"`
 	}
-	r, err := t.UserGetInfo(info.UID)
-	if err != nil {
-		return nil, err
+	if err := request.HTTP().GET("https://api.live.bilibili.com/live_user/v1/UserInfo/get_anchor_in_room?roomid=" + info.Room).SetHeader(headers).BindJSON(&anchor).Do(); err == nil && anchor.Code == 0 {
+		if anchor.Data.Info.Name != "" {
+			info.Upper = anchor.Data.Info.Name
+		}
+		info.Avatar = anchor.Data.Info.Face
 	}
-	return &model.RoomInfo{
-		Status: r.LiveRoom.LiveStatus,
-		Room:   strconv.FormatInt(info.RoomID, 10),
-		Upper:  r.Name,
-		Link:   r.LiveRoom.URL,
-		Title:  r.LiveRoom.Title,
-	}, nil
+	return info, nil
 }
 
 // Stop .

@@ -31,6 +31,8 @@ func Init(staticDir string) *gin.Engine {
 		apiV1.POST("/live/room_infos", v1.GetRoomInfos)
 		apiV1.GET("/live/play_url", v1.GetPlayURL)
 		apiV1.GET("/live/m3u", v1.GetM3U)
+		apiV1.GET("/live/cover", v1.GetCover)
+		apiV1.HEAD("/live/cover", v1.GetCover)
 		apiV1.POST("/live/danmaku/send", v1.SendDanmaku)
 		apiV1.GET("/settings/server", v1.GetServerSettings)
 		apiV1.PUT("/settings/server", v1.SaveServerSettings)
